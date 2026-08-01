@@ -1,14 +1,133 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AIChatBot V2</title>
+
+    <title>AI ChatBot</title>
+
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
+
+
 <body>
 
-    <h1>🤖 AIChatBot V2</h1>
-    <p>Project is running successfully!</p>
+<div class="app">
+
+    <aside class="sidebar">
+
+    <h2>🤖 AI ChatBot</h2>
+
+
+  <a href="/new_chat">
+    <button>
+        + New Chat
+    </button>
+</a>
+
+
+    <div class="history">
+
+<h3>Chats</h3>
+
+{% for chat in chats %}
+
+<a href="/conversation/{{ chat[0] }}" class="chat-item">
+
+    🗨️ {{ chat[1] }}
+
+</a>
+
+{% else %}
+
+<p>No previous chats</p>
+
+{% endfor %}
+
+</div>
+
+
+    <br>
+
+    <a href="/logout">
+        Logout
+    </a>
+
+
+</aside>
+
+    <main class="container">
+
+        <h1>
+            Welcome {{ session.username }} 👋
+        </h1>
+
+
+        <div id="chat-box" class="chat-box">
+
+
+{% if messages %}
+
+{% for msg in messages %}
+
+{% if msg[0] == "user" %}
+
+<div class="user-message">
+👤 {{ msg[1] }}
+</div>
+
+
+{% else %}
+
+<div class="bot-message">
+🤖 {{ msg[1] }}
+</div>
+
+
+{% endif %}
+
+{% endfor %}
+
+
+{% else %}
+
+<div class="bot-message">
+🤖 Hello! How can I help you today?
+</div>
+
+{% endif %}
+
+
+</div>
+
+
+
+        <div class="input-area">
+
+            <input 
+                id="user-input"
+                type="text"
+                placeholder="Ask anything..."
+            >
+
+
+            <button onclick="sendMessage()">
+                Send
+            </button>
+
+        </div>
+
+
+    </main>
+
+</div>
+
+
+<script src="{{ url_for('static', filename='script.js') }}"></script>
+
 
 </body>
+
 </html>
+
