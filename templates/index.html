@@ -81,7 +81,7 @@
         </header>
 
 
-        <!-- Chat messages -->
+        <!-- ================= CHAT BOX ================= -->
 
         <div id="chat-box" class="chat-box">
 
@@ -94,8 +94,11 @@
                     <div class="message-row user-row">
 
                         <div class="user-message">
+
                             <span class="avatar">👤</span>
+
                             <span>{{ msg[1] }}</span>
+
                         </div>
 
                     </div>
@@ -108,9 +111,7 @@
 
                             <span class="avatar">🤖</span>
 
-                            <span>
-                                {{ msg[1] }}
-                            </span>
+                            <span>{{ msg[1] }}</span>
 
                         </div>
 
@@ -128,7 +129,9 @@
                         🤖
                     </div>
 
-                    <h2>Hello! How can I help you today?</h2>
+                    <h2>
+                        Hello! How can I help you today?
+                    </h2>
 
                 </div>
 
@@ -148,6 +151,7 @@
                 <button
                     id="attach-btn"
                     class="icon-btn"
+                    type="button"
                     title="Attach file">
 
                     📎
@@ -161,8 +165,7 @@
                     id="user-input"
                     rows="1"
                     placeholder="Type your message..."
-                    autocomplete="off">
-                </textarea>
+                    autocomplete="off"></textarea>
 
 
                 <!-- Microphone -->
@@ -170,6 +173,7 @@
                 <button
                     id="voice-btn"
                     class="icon-btn"
+                    type="button"
                     title="Voice">
 
                     🎤
@@ -182,6 +186,7 @@
                 <button
                     id="send-btn"
                     class="send-btn"
+                    type="button"
                     onclick="sendMessage()"
                     title="Send">
 

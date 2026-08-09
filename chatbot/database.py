@@ -3,8 +3,22 @@ import sqlite3
 DATABASE = "chatbot.db"
 
 
+# ==========================================
+# DATABASE CONNECTION
+# ==========================================
+
 def get_connection():
-    return sqlite3.connect(DATABASE)
+    conn = sqlite3.connect(
+        DATABASE,
+        timeout=10,
+        check_same_thread=False
+    )
+
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA busy_timeout = 10000")
+
+    return conn
 
 
 # ==========================================
@@ -32,7 +46,10 @@ def create_tables():
             user_id INTEGER NOT NULL,
             title TEXT DEFAULT 'New Chat',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(user_id) REFERENCES users(id)
+
+            FOREIGN KEY(user_id)
+            REFERENCES users(id)
+            ON DELETE CASCADE
         )
     """)
 
@@ -44,7 +61,24 @@ def create_tables():
             role TEXT NOT NULL,
             content TEXT NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY(conversation_id) REFERENCES conversations(id)
+
+            FOREIGN KEY(conversation_id)
+            REFERENCES conversations(id)
+            ON DELETE CASCADE
+        )
+    """)
+
+    # Memories
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS memories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            memory TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+            FOREIGN KEY(user_id)
+            REFERENCES users(id)
+            ON DELETE CASCADE
         )
     """)
 
@@ -61,16 +95,29 @@ def create_user(username, password):
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        INSERT INTO users (username, password)
-        VALUES (?, ?)
-        """,
-        (username, password)
-    )
+    try:
 
-    conn.commit()
-    conn.close()
+        cursor.execute(
+            """
+            INSERT INTO users (username, password)
+            VALUES (?, ?)
+            """,
+            (username, password)
+        )
+
+        conn.commit()
+
+        return True
+
+    except sqlite3.IntegrityError:
+
+        conn.rollback()
+
+        return False
+
+    finally:
+
+        conn.close()
 
 
 def get_user(username):
@@ -80,7 +127,8 @@ def get_user(username):
 
     cursor.execute(
         """
-        SELECT * FROM users
+        SELECT *
+        FROM users
         WHERE username = ?
         """,
         (username,)
@@ -102,20 +150,28 @@ def create_conversation(user_id, title="New Chat"):
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        INSERT INTO conversations(user_id, title)
-        VALUES (?, ?)
-        """,
-        (user_id, title)
-    )
+    try:
 
-    conversation_id = cursor.lastrowid
+        cursor.execute(
+            """
+            INSERT INTO conversations (
+                user_id,
+                title
+            )
+            VALUES (?, ?)
+            """,
+            (user_id, title)
+        )
 
-    conn.commit()
-    conn.close()
+        conversation_id = cursor.lastrowid
 
-    return conversation_id
+        conn.commit()
+
+        return conversation_id
+
+    finally:
+
+        conn.close()
 
 
 def get_conversations(user_id):
@@ -128,7 +184,7 @@ def get_conversations(user_id):
         SELECT id, title
         FROM conversations
         WHERE user_id = ?
-        ORDER BY created_at DESC
+        ORDER BY created_at DESC, id DESC
         """,
         (user_id,)
     )
@@ -164,12 +220,14 @@ def get_conversation_title(conversation_id):
     return None
 
 
-def update_conversation_title(conversation_id, title):
+def update_conversation_title(
+    conversation_id,
+    title
+):
 
     conn = get_connection()
     cursor = conn.cursor()
 
-    # Limit title length
     title = title.strip()[:40]
 
     cursor.execute(
@@ -189,29 +247,38 @@ def update_conversation_title(conversation_id, title):
 # MESSAGE FUNCTIONS
 # ==========================================
 
-def save_message(conversation_id, role, content):
+def save_message(
+    conversation_id,
+    role,
+    content
+):
 
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute(
-        """
-        INSERT INTO messages(
-            conversation_id,
-            role,
-            content
-        )
-        VALUES (?, ?, ?)
-        """,
-        (
-            conversation_id,
-            role,
-            content
-        )
-    )
+    try:
 
-    conn.commit()
-    conn.close()
+        cursor.execute(
+            """
+            INSERT INTO messages (
+                conversation_id,
+                role,
+                content
+            )
+            VALUES (?, ?, ?)
+            """,
+            (
+                conversation_id,
+                role,
+                content
+            )
+        )
+
+        conn.commit()
+
+    finally:
+
+        conn.close()
 
 
 def get_messages(conversation_id):
@@ -245,23 +312,108 @@ def delete_conversation(conversation_id):
     conn = get_connection()
     cursor = conn.cursor()
 
-    # Delete messages first
+    try:
+
+        # Delete messages
+        cursor.execute(
+            """
+            DELETE FROM messages
+            WHERE conversation_id = ?
+            """,
+            (conversation_id,)
+        )
+
+        # Delete conversation
+        cursor.execute(
+            """
+            DELETE FROM conversations
+            WHERE id = ?
+            """,
+            (conversation_id,)
+        )
+
+        conn.commit()
+
+    finally:
+
+        conn.close()
+
+
+# ==========================================
+# MEMORY FUNCTIONS
+# ==========================================
+
+def save_memory(user_id, memory):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+
+        cursor.execute(
+            """
+            INSERT INTO memories (
+                user_id,
+                memory
+            )
+            VALUES (?, ?)
+            """,
+            (user_id, memory)
+        )
+
+        conn.commit()
+
+    finally:
+
+        conn.close()
+
+
+def get_memories(user_id):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
     cursor.execute(
         """
-        DELETE FROM messages
-        WHERE conversation_id = ?
+        SELECT id, memory
+        FROM memories
+        WHERE user_id = ?
+        ORDER BY created_at DESC, id DESC
         """,
-        (conversation_id,)
+        (user_id,)
     )
 
-    # Delete conversation
-    cursor.execute(
-        """
-        DELETE FROM conversations
-        WHERE id = ?
-        """,
-        (conversation_id,)
-    )
+    memories = cursor.fetchall()
 
-    conn.commit()
     conn.close()
+
+    return memories
+
+
+def delete_memory(
+    memory_id,
+    user_id
+):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    try:
+
+        cursor.execute(
+            """
+            DELETE FROM memories
+            WHERE id = ?
+            AND user_id = ?
+            """,
+            (
+                memory_id,
+                user_id
+            )
+        )
+
+        conn.commit()
+
+    finally:
+
+        conn.close()

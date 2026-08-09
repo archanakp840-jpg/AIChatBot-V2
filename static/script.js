@@ -1,3 +1,9 @@
+let currentController = null;
+let isGenerating = false;
+let recognition = null;
+let isListening = false;
+
+
 // ==========================================
 // SEND MESSAGE
 // ==========================================
@@ -10,89 +16,66 @@ async function sendMessage() {
 
     const message = input.value.trim();
 
-    if (message === "") {
+    if (message === "" || isGenerating) {
         return;
     }
 
+    currentController = new AbortController();
 
-    // --------------------------------------
+    isGenerating = true;
+
     // Show user message
-    // --------------------------------------
-
-    const userRow = document.createElement("div");
-
-    userRow.className = "message-row user-row";
-
-    const userMessage = document.createElement("div");
-
-    userMessage.className = "user-message";
-
-    userMessage.innerHTML =
-        `<span class="avatar">👤</span>
-         <span>${escapeHTML(message)}</span>`;
-
-    userRow.appendChild(userMessage);
-
-    chatBox.appendChild(userRow);
-
-
-    // Remove welcome screen if present
-
-    const welcome = document.querySelector(".welcome-message");
-
-    if (welcome) {
-        welcome.remove();
-    }
-
+    chatBox.innerHTML += `
+        <div class="message-row user-row">
+            <div class="user-message">
+                <span class="avatar">👤</span>
+                <span>${escapeHTML(message)}</span>
+            </div>
+        </div>
+    `;
 
     chatBox.scrollTop = chatBox.scrollHeight;
 
-
-    // Clear input
-
     input.value = "";
 
+    // Change Send → Stop
+    sendButton.classList.add("stop-btn");
 
-    // Disable send
+    sendButton.innerHTML = `
+        <span class="stop-icon">■</span>
+    `;
 
-    sendButton.disabled = true;
-
-
-    // --------------------------------------
-    // Create AI message
-    // --------------------------------------
-
-    const botRow = document.createElement("div");
-
-    botRow.className = "message-row bot-row";
+    sendButton.title = "Stop generating";
 
 
-    const botMessage = document.createElement("div");
+    // Thinking indicator
+    const thinkingMessage = document.createElement("div");
 
-    botMessage.className = "bot-message";
+    thinkingMessage.className =
+        "message-row bot-row thinking-container";
 
-    botMessage.innerHTML =
-        `<span class="avatar">🤖</span>
-         <span class="bot-text">Thinking...</span>`;
+    thinkingMessage.innerHTML = `
+        <div class="thinking-message">
 
+            <span class="avatar">🤖</span>
 
-    botRow.appendChild(botMessage);
+            <span>Thinking</span>
 
-    chatBox.appendChild(botRow);
+            <div class="thinking-dots">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
 
+        </div>
+    `;
 
-    const botText =
-        botMessage.querySelector(".bot-text");
-
+    chatBox.appendChild(thinkingMessage);
 
     chatBox.scrollTop = chatBox.scrollHeight;
 
 
     try {
-
-        // ----------------------------------
-        // Send request
-        // ----------------------------------
 
         const response = await fetch("/chat", {
 
@@ -104,69 +87,74 @@ async function sendMessage() {
 
             body: JSON.stringify({
                 message: message
-            })
+            }),
+
+            signal: currentController.signal
 
         });
 
 
         if (!response.ok) {
-
             throw new Error(
-                "Server returned " + response.status
+                "Server error: " + response.status
             );
-
         }
 
 
-        if (!response.body) {
-
-            throw new Error(
-                "Streaming is not supported by this response."
-            );
-
-        }
+        thinkingMessage.remove();
 
 
-        // ----------------------------------
+        // AI message container
+        const botMessage =
+            document.createElement("div");
+
+        botMessage.className =
+            "message-row bot-row";
+
+        botMessage.innerHTML = `
+            <div class="bot-message">
+
+                <span class="avatar">🤖</span>
+
+                <span class="bot-text"></span>
+
+            </div>
+        `;
+
+        chatBox.appendChild(botMessage);
+
+
+        const botText =
+            botMessage.querySelector(".bot-text");
+
+
         // Read stream
-        // ----------------------------------
-
         const reader =
             response.body.getReader();
 
         const decoder =
-            new TextDecoder("utf-8");
+            new TextDecoder();
 
         let fullText = "";
-
-        let firstChunk = true;
 
 
         while (true) {
 
-            const result =
-                await reader.read();
+            const {
+                value,
+                done
+            } = await reader.read();
 
-            if (result.done) {
+
+            if (done) {
                 break;
             }
 
 
             const text =
-                decoder.decode(
-                    result.value,
-                    {
-                        stream: true
-                    }
-                );
-
-
-            if (firstChunk) {
-
-                botText.textContent = "";
-
-                firstChunk = false;
-            }
+                decoder.decode(value, {
+                    stream: true
+                });
 
 
             fullText += text;
@@ -181,55 +169,201 @@ async function sendMessage() {
         }
 
 
-        // Finish decoder
+    } catch (error) {
 
-        const remaining =
-            decoder.decode();
-
-        if (remaining) {
-
-            fullText += remaining;
-
-            botText.innerHTML =
-                formatMessage(fullText);
+        if (error.name === "AbortError") {
+            console.log("Generation stopped.");
+            return;
         }
 
 
-        // If nothing came back
-
-        if (fullText.trim() === "") {
-
-            botText.textContent =
-                "No response received.";
-        }
-
-    }
-
-    catch (error) {
-
-        console.error(
-            "Chat error:",
-            error
-        );
+        console.error(error);
 
 
-        botText.textContent =
-            "Sorry, I couldn't connect to the AI.";
-    }
+        thinkingMessage.remove();
 
 
-    finally {
+        chatBox.innerHTML += `
+            <div class="message-row bot-row">
 
-        sendButton.disabled = false;
+                <div class="bot-message">
+
+                    <span class="avatar">🤖</span>
+
+                    <span>
+                        Sorry, I couldn't connect
+                        to the AI.
+                    </span>
+
+                </div>
+
+            </div>
+        `;
+
+
+    } finally {
+
+        isGenerating = false;
+
+        currentController = null;
+
+        sendButton.classList.remove("stop-btn");
+
+        sendButton.innerHTML = "➤";
+
+        sendButton.title = "Send";
 
         input.focus();
-
     }
 }
 
 
 // ==========================================
-// ENTER KEY
+// STOP GENERATING
+// ==========================================
+
+function stopGenerating() {
+
+    if (currentController && isGenerating) {
+
+        currentController.abort();
+
+        currentController = null;
+
+        isGenerating = false;
+
+        const sendButton =
+            document.getElementById("send-btn");
+
+        sendButton.classList.remove("stop-btn");
+
+        sendButton.innerHTML = "➤";
+
+        sendButton.title = "Send";
+    }
+}
+
+
+// ==========================================
+// VOICE INPUT
+// ==========================================
+
+function setupVoiceRecognition() {
+
+    const voiceButton =
+        document.getElementById("voice-btn");
+
+    const input =
+        document.getElementById("user-input");
+
+
+    if (!voiceButton) {
+        return;
+    }
+
+
+    const SpeechRecognition =
+        window.SpeechRecognition ||
+        window.webkitSpeechRecognition;
+
+
+    if (!SpeechRecognition) {
+
+        voiceButton.disabled = true;
+
+        voiceButton.title =
+            "Voice input is not supported by this browser";
+
+        return;
+    }
+
+
+    recognition =
+        new SpeechRecognition();
+
+
+    recognition.continuous = false;
+
+    recognition.interimResults = true;
+
+    recognition.lang = "en-IN";
+
+
+    recognition.onstart = function () {
+
+        isListening = true;
+
+        voiceButton.classList.add("listening");
+
+        voiceButton.innerHTML = "🔴";
+
+        voiceButton.title = "Listening...";
+    };
+
+
+    recognition.onresult = function (event) {
+
+        let transcript = "";
+
+        for (
+            let i = event.resultIndex;
+            i < event.results.length;
+            i++
+        ) {
+
+            transcript +=
+                event.results[i][0].transcript;
+        }
+
+
+        input.value = transcript;
+    };
+
+
+    recognition.onerror = function (event) {
+
+        console.error(
+            "Voice error:",
+            event.error
+        );
+    };
+
+
+    recognition.onend = function () {
+
+        isListening = false;
+
+        voiceButton.classList.remove(
+            "listening"
+        );
+
+        voiceButton.innerHTML = "🎤";
+
+        voiceButton.title = "Voice";
+    };
+
+
+    voiceButton.addEventListener(
+        "click",
+        function () {
+
+            if (isListening) {
+
+                recognition.stop();
+
+            } else {
+
+                recognition.start();
+
+            }
+
+        }
+    );
+}
+
+
+// ==========================================
+// BUTTONS + ENTER KEY
 // ==========================================
 
 document.addEventListener(
@@ -239,12 +373,30 @@ document.addEventListener(
         const input =
             document.getElementById("user-input");
 
-
-        if (!input) {
-            return;
-        }
+        const sendButton =
+            document.getElementById("send-btn");
 
 
+        // Send / Stop
+        sendButton.addEventListener(
+            "click",
+            function () {
+
+                if (isGenerating) {
+
+                    stopGenerating();
+
+                } else {
+
+                    sendMessage();
+
+                }
+
+            }
+        );
+
+
+        // Enter
         input.addEventListener(
             "keydown",
             function (event) {
@@ -256,7 +408,9 @@ document.addEventListener(
 
                     event.preventDefault();
 
-                    sendMessage();
+                    if (!isGenerating) {
+                        sendMessage();
+                    }
 
                 }
 
@@ -264,22 +418,8 @@ document.addEventListener(
         );
 
 
-        // Auto resize textarea
-
-        input.addEventListener(
-            "input",
-            function () {
-
-                this.style.height = "auto";
-
-                this.style.height =
-                    Math.min(
-                        this.scrollHeight,
-                        150
-                    ) + "px";
-
-            }
-        );
+        // Voice
+        setupVoiceRecognition();
 
     }
 );
@@ -301,7 +441,7 @@ function escapeHTML(text) {
 
 
 // ==========================================
-// FORMAT AI MESSAGE
+// FORMAT MESSAGE
 // ==========================================
 
 function formatMessage(text) {
