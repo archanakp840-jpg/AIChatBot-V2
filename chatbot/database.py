@@ -7,64 +7,82 @@ def get_connection():
     return sqlite3.connect(DATABASE)
 
 
+# ==========================================
+# CREATE TABLES
+# ==========================================
+
 def create_tables():
+
     conn = get_connection()
     cursor = conn.cursor()
 
-    # Users table
+    # Users
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL
-    )
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password TEXT NOT NULL
+        )
     """)
 
-    # Conversations table
+    # Conversations
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS conversations (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        title TEXT DEFAULT 'New Chat',
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(user_id) REFERENCES users(id)
-    )
+        CREATE TABLE IF NOT EXISTS conversations (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            title TEXT DEFAULT 'New Chat',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        )
     """)
 
-    # Messages table
+    # Messages
     cursor.execute("""
-    CREATE TABLE IF NOT EXISTS messages (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        conversation_id INTEGER NOT NULL,
-        role TEXT NOT NULL,
-        content TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY(conversation_id) REFERENCES conversations(id)
-    )
+        CREATE TABLE IF NOT EXISTS messages (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id INTEGER NOT NULL,
+            role TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(conversation_id) REFERENCES conversations(id)
+        )
     """)
 
     conn.commit()
     conn.close()
 
 
+# ==========================================
+# USER FUNCTIONS
+# ==========================================
+
 def create_user(username, password):
+
     conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute(
-        "INSERT INTO users (username, password) VALUES (?, ?)",
+        """
+        INSERT INTO users (username, password)
+        VALUES (?, ?)
+        """,
         (username, password)
     )
 
     conn.commit()
     conn.close()
 
+
 def get_user(username):
+
     conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute(
-        "SELECT * FROM users WHERE username=?",
+        """
+        SELECT * FROM users
+        WHERE username = ?
+        """,
         (username,)
     )
 
@@ -75,7 +93,12 @@ def get_user(username):
     return user
 
 
+# ==========================================
+# CONVERSATION FUNCTIONS
+# ==========================================
+
 def create_conversation(user_id, title="New Chat"):
+
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -96,6 +119,7 @@ def create_conversation(user_id, title="New Chat"):
 
 
 def get_conversations(user_id):
+
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -103,7 +127,7 @@ def get_conversations(user_id):
         """
         SELECT id, title
         FROM conversations
-        WHERE user_id=?
+        WHERE user_id = ?
         ORDER BY created_at DESC
         """,
         (user_id,)
@@ -116,16 +140,74 @@ def get_conversations(user_id):
     return chats
 
 
-def save_message(conversation_id, role, content):
+def get_conversation_title(conversation_id):
+
     conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute(
         """
-        INSERT INTO messages(conversation_id, role, content)
+        SELECT title
+        FROM conversations
+        WHERE id = ?
+        """,
+        (conversation_id,)
+    )
+
+    row = cursor.fetchone()
+
+    conn.close()
+
+    if row:
+        return row[0]
+
+    return None
+
+
+def update_conversation_title(conversation_id, title):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    # Limit title length
+    title = title.strip()[:40]
+
+    cursor.execute(
+        """
+        UPDATE conversations
+        SET title = ?
+        WHERE id = ?
+        """,
+        (title, conversation_id)
+    )
+
+    conn.commit()
+    conn.close()
+
+
+# ==========================================
+# MESSAGE FUNCTIONS
+# ==========================================
+
+def save_message(conversation_id, role, content):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        INSERT INTO messages(
+            conversation_id,
+            role,
+            content
+        )
         VALUES (?, ?, ?)
         """,
-        (conversation_id, role, content)
+        (
+            conversation_id,
+            role,
+            content
+        )
     )
 
     conn.commit()
@@ -133,6 +215,7 @@ def save_message(conversation_id, role, content):
 
 
 def get_messages(conversation_id):
+
     conn = get_connection()
     cursor = conn.cursor()
 
@@ -140,7 +223,7 @@ def get_messages(conversation_id):
         """
         SELECT role, content
         FROM messages
-        WHERE conversation_id=?
+        WHERE conversation_id = ?
         ORDER BY id
         """,
         (conversation_id,)
@@ -152,23 +235,33 @@ def get_messages(conversation_id):
 
     return messages
 
-def get_messages(conversation_id):
+
+# ==========================================
+# DELETE CONVERSATION
+# ==========================================
+
+def delete_conversation(conversation_id):
 
     conn = get_connection()
     cursor = conn.cursor()
 
+    # Delete messages first
     cursor.execute(
         """
-        SELECT role, content
-        FROM messages
-        WHERE conversation_id=?
-        ORDER BY id
+        DELETE FROM messages
+        WHERE conversation_id = ?
         """,
         (conversation_id,)
     )
 
-    messages = cursor.fetchall()
+    # Delete conversation
+    cursor.execute(
+        """
+        DELETE FROM conversations
+        WHERE id = ?
+        """,
+        (conversation_id,)
+    )
 
+    conn.commit()
     conn.close()
-
-    return messages

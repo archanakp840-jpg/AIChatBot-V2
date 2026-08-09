@@ -7,117 +7,195 @@
 
     <title>AI ChatBot</title>
 
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet"
+          href="{{ url_for('static', filename='style.css') }}">
 </head>
-
 
 <body>
 
 <div class="app">
 
+    <!-- ================= SIDEBAR ================= -->
+
     <aside class="sidebar">
 
-    <h2>🤖 AI ChatBot</h2>
+        <div class="logo">
+            🤖 <span>AI ChatBot</span>
+        </div>
 
+        <a href="/new_chat" class="new-chat">
+            + New Chat
+        </a>
 
-  <a href="/new_chat">
-    <button>
-        + New Chat
-    </button>
-</a>
+        <div class="history">
 
+            <h3>Chats</h3>
 
-    <div class="history">
+            {% for chat in chats %}
 
-<h3>Chats</h3>
+            <div class="chat-item">
 
-{% for chat in chats %}
+                <a href="/conversation/{{ chat[0] }}"
+                   class="chat-link">
 
-<a href="/conversation/{{ chat[0] }}" class="chat-item">
+                    💬
+                    <span>{{ chat[1] }}</span>
 
-    🗨️ {{ chat[1] }}
+                </a>
 
-</a>
+                <a href="/delete_chat/{{ chat[0] }}"
+                   class="delete-btn"
+                   onclick="return confirm('Delete this chat?')">
 
-{% else %}
+                    🗑️
 
-<p>No previous chats</p>
+                </a>
 
-{% endfor %}
+            </div>
 
-</div>
+            {% else %}
 
+            <p class="no-chats">
+                No previous chats
+            </p>
 
-    <br>
-
-    <a href="/logout">
-        Logout
-    </a>
-
-
-</aside>
-
-    <main class="container">
-
-        <h1>
-            Welcome {{ session.username }} 👋
-        </h1>
-
-
-        <div id="chat-box" class="chat-box">
-
-
-{% if messages %}
-
-{% for msg in messages %}
-
-{% if msg[0] == "user" %}
-
-<div class="user-message">
-👤 {{ msg[1] }}
-</div>
-
-
-{% else %}
-
-<div class="bot-message">
-🤖 {{ msg[1] }}
-</div>
-
-
-{% endif %}
-
-{% endfor %}
-
-
-{% else %}
-
-<div class="bot-message">
-🤖 Hello! How can I help you today?
-</div>
-
-{% endif %}
-
-
-</div>
-
-
-
-        <div class="input-area">
-
-            <input 
-                id="user-input"
-                type="text"
-                placeholder="Ask anything..."
-            >
-
-
-            <button onclick="sendMessage()">
-                Send
-            </button>
+            {% endfor %}
 
         </div>
 
+        <a href="/logout" class="logout">
+            Logout
+        </a>
+
+    </aside>
+
+
+    <!-- ================= MAIN CHAT ================= -->
+
+    <main class="main">
+
+        <header class="topbar">
+
+            <h1>AI ChatBot</h1>
+
+        </header>
+
+
+        <!-- Chat messages -->
+
+        <div id="chat-box" class="chat-box">
+
+            {% if messages %}
+
+                {% for msg in messages %}
+
+                    {% if msg[0] == "user" %}
+
+                    <div class="message-row user-row">
+
+                        <div class="user-message">
+                            <span class="avatar">👤</span>
+                            <span>{{ msg[1] }}</span>
+                        </div>
+
+                    </div>
+
+                    {% else %}
+
+                    <div class="message-row bot-row">
+
+                        <div class="bot-message">
+
+                            <span class="avatar">🤖</span>
+
+                            <span>
+                                {{ msg[1] }}
+                            </span>
+
+                        </div>
+
+                    </div>
+
+                    {% endif %}
+
+                {% endfor %}
+
+            {% else %}
+
+                <div class="welcome-message">
+
+                    <div class="welcome-icon">
+                        🤖
+                    </div>
+
+                    <h2>Hello! How can I help you today?</h2>
+
+                </div>
+
+            {% endif %}
+
+        </div>
+
+
+        <!-- ================= INPUT ================= -->
+
+        <div class="input-wrapper">
+
+            <div class="input-area">
+
+                <!-- Attachment -->
+
+                <button
+                    id="attach-btn"
+                    class="icon-btn"
+                    title="Attach file">
+
+                    📎
+
+                </button>
+
+
+                <!-- Text box -->
+
+                <textarea
+                    id="user-input"
+                    rows="1"
+                    placeholder="Type your message..."
+                    autocomplete="off">
+                </textarea>
+
+
+                <!-- Microphone -->
+
+                <button
+                    id="voice-btn"
+                    class="icon-btn"
+                    title="Voice">
+
+                    🎤
+
+                </button>
+
+
+                <!-- Send -->
+
+                <button
+                    id="send-btn"
+                    class="send-btn"
+                    onclick="sendMessage()"
+                    title="Send">
+
+                    ➤
+
+                </button>
+
+            </div>
+
+            <p class="hint">
+                Press Enter to send • Shift + Enter for a new line
+            </p>
+
+        </div>
 
     </main>
 
@@ -126,8 +204,6 @@
 
 <script src="{{ url_for('static', filename='script.js') }}"></script>
 
-
 </body>
 
 </html>
-
