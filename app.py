@@ -37,6 +37,8 @@ from chatbot.auth import (
 
 app = Flask(__name__)
 
+# IMPORTANT:
+# Change this to a long random secret before deploying.
 app.secret_key = "change_this_to_a_secure_secret_key"
 
 # Create database tables
@@ -79,28 +81,23 @@ MAX_MEMORY_LENGTH = 300
 
 def extract_memories(user_id, user_message):
     """
-    Ask Ollama to identify stable information that
-    should be remembered across future conversations.
+    Ask Ollama to identify ONLY stable information
+    explicitly stated by the user.
 
-    Examples:
-        - Name
-        - Skills
-        - Interests
-        - Hobbies
-        - Career goals
-        - Learning goals
-        - Long-term projects
-        - Preferences
+    IMPORTANT:
+    This function must NEVER infer or guess user facts.
     """
 
     try:
 
         response = ollama.chat(
+
             model=MODEL_NAME,
 
             messages=[
                 {
                     "role": "system",
+
                     "content": """
 You are a strict long-term memory extraction system.
 
@@ -110,18 +107,41 @@ states about themselves.
 IMPORTANT RULES:
 
 1. NEVER infer or guess anything.
+
 2. NEVER create a fact from context.
+
 3. NEVER assume something is true because it seems likely.
-4. NEVER save information about the user that they did not explicitly state.
+
+4. NEVER save information about the user that they did not
+   explicitly state.
+
 5. Save only stable information that the user directly stated.
+
 6. Do not save information about other people unless the user
    explicitly says it is about themselves.
+
 7. Do not save temporary questions or hypothetical statements.
-8. Do not save passwords, API keys, private credentials, or secrets.
-9. Do not save emotions or temporary situations unless they are
-   explicitly presented as a stable preference or long-term fact.
+
+8. Do not save passwords, API keys, private credentials,
+   authentication codes, or secrets.
+
+9. Do not save temporary emotions or temporary situations.
+
 10. If you are unsure whether something is explicitly stated,
     DO NOT save it.
+
+11. A question is NOT a fact.
+
+12. A request is NOT a fact.
+
+13. A possibility is NOT a fact.
+
+14. A suggestion is NOT a fact.
+
+15. A hypothetical statement is NOT a fact.
+
+16. Information mentioned by the assistant is NOT a fact about
+    the user unless the user explicitly confirms it.
 
 Examples:
 
@@ -173,6 +193,42 @@ User:
 Save:
 NONE
 
+User:
+"My favorite programming language is Python."
+
+Save:
+"The user's favorite programming language is Python."
+
+User:
+"What is the best programming language?"
+
+Save:
+NONE
+
+User:
+"I have a project called AIChatBot."
+
+Save:
+"The user has a project called AIChatBot."
+
+User:
+"Can you suggest an AI chatbot project?"
+
+Save:
+NONE
+
+User:
+"I studied computer science."
+
+Save:
+"The user studied computer science."
+
+User:
+"What can I do with a computer science degree?"
+
+Save:
+NONE
+
 Return each valid memory on a separate line.
 
 If there is no explicit, stable user fact, return exactly:
@@ -182,6 +238,7 @@ NONE
 Do not explain your answer.
 """
                 },
+
                 {
                     "role": "user",
                     "content": user_message
@@ -199,10 +256,23 @@ Do not explain your answer.
             }
         )
 
-        result = response["message"]["content"].strip()
+        # ----------------------------------------------------
+        # Get result
+        # ----------------------------------------------------
+
+        result = (
+            response
+            .get("message", {})
+            .get("content", "")
+            .strip()
+        )
 
         if not result:
             return
+
+        # ----------------------------------------------------
+        # No memory
+        # ----------------------------------------------------
 
         if result.upper() == "NONE":
             return
@@ -226,23 +296,38 @@ Do not explain your answer.
 
             memory = memory.strip()
 
-            # Remove common bullet formatting
+            # Remove bullets
             memory = memory.lstrip("-•* ")
 
-            # Remove numbered formatting
+            # Remove simple numbering
             if memory[:2].rstrip(".").isdigit():
                 memory = memory[2:].strip()
 
             if not memory:
                 continue
 
-            # Limit memory length
+            # ------------------------------------------------
+            # Safety check
+            # ------------------------------------------------
+
+            upper_memory = memory.upper()
+
+            if upper_memory == "NONE":
+                continue
+
+            # ------------------------------------------------
+            # Limit length
+            # ------------------------------------------------
+
             memory = memory[:MAX_MEMORY_LENGTH]
 
             if len(memory) < 3:
                 continue
 
-            # Prevent duplicate memories
+            # ------------------------------------------------
+            # Duplicate check
+            # ------------------------------------------------
+
             if memory.lower() in existing_texts:
                 continue
 
@@ -254,7 +339,8 @@ Do not explain your answer.
 
             if len(current_memories) >= MAX_MEMORIES:
 
-                # get_memories() returns newest first
+                # Memories are newest first.
+                # Last item = oldest.
                 oldest = current_memories[-1]
 
                 delete_memory(
@@ -286,9 +372,13 @@ Do not explain your answer.
 
         # Memory extraction must NEVER
         # break the actual chatbot.
+
         print()
+        print("===================================")
         print("MEMORY EXTRACTION ERROR")
+        print("===================================")
         print(repr(e))
+        print("===================================")
         print()
 
 
@@ -309,13 +399,13 @@ def home():
     user_id = session["user"]
 
     # --------------------------------------------------------
-    # Get conversations
+    # Get user's conversations
     # --------------------------------------------------------
 
     chats = get_conversations(user_id)
 
     # --------------------------------------------------------
-    # Active conversation
+    # Get active conversation
     # --------------------------------------------------------
 
     conversation_id = session.get(
@@ -325,15 +415,15 @@ def home():
     messages = []
 
     # --------------------------------------------------------
-    # Verify active conversation belongs to user
+    # Verify active conversation ownership
     # --------------------------------------------------------
 
     if conversation_id:
 
-        chat_ids = [
+        chat_ids = {
             chat[0]
             for chat in chats
-        ]
+        }
 
         if conversation_id in chat_ids:
 
@@ -418,6 +508,10 @@ def login():
             ""
         )
 
+        # ----------------------------------------------------
+        # Login
+        # ----------------------------------------------------
+
         user = login_user(
             username,
             password
@@ -425,14 +519,15 @@ def login():
 
         if user:
 
+            # Clear old session
             session.clear()
 
             session["user"] = user[0]
             session["username"] = user[1]
 
-            # ----------------------------------------------
-            # Get user's previous conversations
-            # ----------------------------------------------
+            # ------------------------------------------------
+            # Get previous conversations
+            # ------------------------------------------------
 
             chats = get_conversations(
                 user[0]
@@ -440,12 +535,14 @@ def login():
 
             if chats:
 
+                # Open latest conversation
                 session["conversation_id"] = (
                     chats[0][0]
                 )
 
             else:
 
+                # Create first conversation
                 session["conversation_id"] = (
                     create_conversation(
                         user[0],
@@ -485,7 +582,10 @@ def register():
         )
 
         if not username or not password:
-            return "Username and password are required"
+
+            return (
+                "Username and password are required"
+            )
 
         if register_user(
             username,
@@ -575,13 +675,13 @@ def chat():
         }), 400
 
     # --------------------------------------------------------
-    # User
+    # Current user
     # --------------------------------------------------------
 
     user_id = session["user"]
 
     # --------------------------------------------------------
-    # Conversation
+    # Current conversation
     # --------------------------------------------------------
 
     conversation_id = session.get(
@@ -640,8 +740,12 @@ def chat():
     # --------------------------------------------------------
     # Extract long-term memories
     #
-    # This runs before the response so the newly learned
-    # information can also be available immediately.
+    # IMPORTANT:
+    # The extractor ONLY receives the user's message.
+    # It does not receive previous assistant answers.
+    #
+    # This helps prevent assistant-generated assumptions
+    # from becoming memories.
     # --------------------------------------------------------
 
     extract_memories(
@@ -659,7 +763,11 @@ def chat():
 
     if title == "New Chat":
 
-        new_title = user_message.strip()[:40]
+        new_title = (
+            user_message
+            .strip()
+            [:40]
+        )
 
         update_conversation_title(
             conversation_id,
@@ -667,37 +775,37 @@ def chat():
         )
 
     # --------------------------------------------------------
-    # Get conversation history
-    #
-    # This is specific to THIS conversation.
+    # Get current conversation history
     # --------------------------------------------------------
 
     history = get_messages(
         conversation_id
     )
 
+    # --------------------------------------------------------
+    # Keep recent history
+    # --------------------------------------------------------
+
     history = history[
         -MAX_HISTORY_MESSAGES:
     ]
 
     # --------------------------------------------------------
-    # Get user's LONG-TERM memories
-    #
-    # These are shared across conversations.
+    # Get long-term memories
     # --------------------------------------------------------
 
     memories = get_memories(
         user_id
     )
 
-    # --------------------------------------------------------
-    # Build Ollama messages
-    # --------------------------------------------------------
+    # ========================================================
+    # BUILD OLLAMA MESSAGES
+    # ========================================================
 
     ollama_messages = []
 
     # --------------------------------------------------------
-    # SYSTEM MESSAGE
+    # Main system prompt
     # --------------------------------------------------------
 
     system_prompt = """
@@ -732,7 +840,7 @@ When answering questions about the user:
 
 6. NEVER turn a question into a personal fact.
 
-Example:
+Examples:
 
 User:
 "What jobs would suit me?"
@@ -752,54 +860,124 @@ User:
 This does NOT mean:
 "The user lives in Kochi."
 
+User:
+"What do you think I am interested in?"
+
+This does NOT mean that any guessed interest is a fact.
+
 7. If the user asks:
+
    "What do you know about me?"
 
-   Give ONLY facts that are explicitly stored in memory
-   or explicitly stated in the current conversation.
+   Give ONLY facts that are explicitly supported by
+   the LONG-TERM USER MEMORY or CURRENT CONVERSATION.
 
-8. If there is not enough information, say that you
-   don't know rather than guessing.
+8. If there is not enough information, say:
+
+   "I don't know that yet."
+
+   Do not fill the gap with guesses.
 
 9. Clearly distinguish between:
+
    - what the user explicitly told you
-   - what you do NOT know
+   - what you do not know
 
-10. Do not present assumptions as facts.
+10. Never present assumptions as facts.
+
+11. Never claim that you remember something unless it is
+    actually present in the provided context.
+
+12. Never use general knowledge about the user to create
+    a personal fact.
 
 ==================================================
-LONG-TERM MEMORY
+LONG-TERM MEMORY RULES
 ==================================================
+
+Long-term memory contains only information that the user
+explicitly stated about themselves.
 
 Use long-term memory when it is relevant.
-
-Long-term memory contains only information that the
-user explicitly stated about themselves.
 
 Do not modify or reinterpret a memory.
 
 Do not create new personal facts from the memories.
 
-Do not mention the internal memory system unless the
-user explicitly asks about it.
+If a memory says:
+
+"The user likes Python."
+
+You may say:
+
+"You told me that you like Python."
+
+You may NOT conclude:
+
+"Therefore you are a programmer."
+
+unless the user explicitly stated that.
 
 ==================================================
-CONVERSATION CONTEXT
+CURRENT CONVERSATION RULES
 ==================================================
 
 Use the current conversation naturally.
 
-If the user asks about something from an earlier
-conversation and the available memory does not contain
-that information, do not invent it.
+The current conversation may contain questions,
+possibilities, examples, hypothetical situations,
+or statements about other people.
 
-Say that you don't have enough information.
+Do not automatically treat those as facts about the user.
 
-Be natural, helpful, and honest.
+Only treat something as a user fact when the user
+explicitly states that it applies to themselves.
+
+==================================================
+WHEN ASKED WHAT YOU KNOW
+==================================================
+
+If the user asks:
+
+"What do you know about me?"
+
+or:
+
+"What do you remember about me?"
+
+or similar questions:
+
+1. List only explicit facts available in memory
+   or the current conversation.
+
+2. Do not add guesses.
+
+3. Do not add personality analysis unless the user
+   explicitly stated the relevant trait.
+
+4. Do not turn previous questions into facts.
+
+5. If there are no known facts, say so.
+
+6. Never pretend to know more than the available context.
+
+==================================================
+HONESTY
+==================================================
+
+Accuracy is more important than appearing knowledgeable.
+
+If you don't know something about the user, say that
+you don't know.
+
+Be helpful, natural, and conversational.
+
+Do not mention the internal memory system unless the
+user explicitly asks about it.
 """
 
     # --------------------------------------------------------
-    # Add memories to system prompt
+    # Add long-term memory
     # --------------------------------------------------------
 
     if memories:
@@ -810,9 +988,16 @@ Be natural, helpful, and honest.
         )
 
         system_prompt += (
-            "\n\nLONG-TERM USER MEMORY:\n"
+            "\n\n"
+            "==================================================\n"
+            "LONG-TERM USER MEMORY\n"
+            "==================================================\n"
             + memory_text
         )
+
+    # --------------------------------------------------------
+    # Add system message
+    # --------------------------------------------------------
 
     ollama_messages.append({
         "role": "system",
@@ -885,11 +1070,16 @@ Be natural, helpful, and honest.
                 }
             )
 
-            print("Ollama connected.")
-            print("Generating...")
+            print(
+                "Ollama connected."
+            )
+
+            print(
+                "Generating..."
+            )
 
             # ------------------------------------------------
-            # Stream
+            # Stream response
             # ------------------------------------------------
 
             for chunk in stream:
@@ -904,10 +1094,11 @@ Be natural, helpful, and honest.
 
                     full_reply += text
 
+                    # Send immediately
                     yield text
 
             # ------------------------------------------------
-            # Save complete AI response
+            # Save complete response
             # ------------------------------------------------
 
             if full_reply:
@@ -1053,7 +1244,7 @@ def delete_chat(id):
     }
 
     # --------------------------------------------------------
-    # Delete only if owned by user
+    # Delete only user's conversation
     # --------------------------------------------------------
 
     if id in chat_ids:
@@ -1116,6 +1307,7 @@ def memories():
             "id": memory[0],
             "memory": memory[1]
         }
+
         for memory in user_memories
     ])
 
