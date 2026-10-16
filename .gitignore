@@ -10,3 +10,4 @@ chatbot.db
 
 # Environment variables
 .env
+.git-corrupt-backup/
